@@ -2,9 +2,10 @@ import type { GlucoseReading } from "./glucose-data";
 
 // Business layer: interpretation and calculations remain independent of the UI.
 export function classifyGlucose(value: number) {
-  if (value < 70) return { label: "Low", tone: "low" };
-  if (value > 180) return { label: "High", tone: "high" };
-  return { label: "In range", tone: "in-range" };
+  if (value >= 40 && value <= 70) return { label: "Low", tone: "low" };
+  if (value >= 180 && value <= 400) return { label: "High", tone: "high" };
+  if (value >= 80 && value <= 115) return { label: "In range", tone: "in-range" };
+  return { label: "Watch", tone: "watch" };
 }
 
 export function calculateAverage(readings: GlucoseReading[]) {
@@ -12,7 +13,7 @@ export function calculateAverage(readings: GlucoseReading[]) {
 }
 
 export function calculateTimeInRange(readings: GlucoseReading[]) {
-  const count = readings.filter((item) => item.value >= 70 && item.value <= 180).length;
+  const count = readings.filter((item) => item.value >= 80 && item.value <= 115).length;
   return Math.round((count / readings.length) * 100);
 }
 
@@ -24,5 +25,9 @@ export function getTrend(current: number, previous: number) {
 }
 
 export function formatGlucoseTime(timestamp: string) {
-  return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(new Date(timestamp));
+  return new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(timestamp));
+}
+
+export function formatLongDate(timestamp: string) {
+  return new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(new Date(timestamp));
 }
