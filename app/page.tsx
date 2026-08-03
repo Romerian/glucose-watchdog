@@ -101,7 +101,7 @@ export default function Home() {
     <div className="app-shell">
       <header className="topbar">
         <button className="brand" onClick={() => setActiveNav("Overview")} aria-label="Glucose Watchdog home">
-          <Image src="/glucose-watchdog-bulldog.png" alt="English bulldog icon" width={40} height={40} priority />
+          <Image src="/glucose-watchdog-bulldog.png" alt="English bulldog icon" width={40} height={40} priority unoptimized />
           <span>Glucose Watchdog</span>
         </button>
         <nav aria-label="Primary navigation">
