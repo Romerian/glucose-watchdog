@@ -8,6 +8,32 @@ export function classifyGlucose(value: number) {
   return { label: "Watch", tone: "watch" };
 }
 
+export const WARNING_REMINDER_MS = 5 * 60 * 1000;
+
+export type GlucoseWarning = {
+  severity: "low" | "high";
+  title: string;
+  message: string;
+};
+
+export function getGlucoseWarning(value: number): GlucoseWarning | null {
+  if (value < 70) {
+    return {
+      severity: "low",
+      title: "Hypoglycemia",
+      message: "Eat or drink fast acting sugar right away. Then allow 15 minutes before checking blood sugar levels.",
+    };
+  }
+  if (value > 180) {
+    return {
+      severity: "high",
+      title: "Alert Hyperglycemia!",
+      message: "Take appropriate action.",
+    };
+  }
+  return null;
+}
+
 export function calculateAverage(readings: GlucoseReading[]) {
   return Math.round(readings.reduce((sum, item) => sum + item.value, 0) / readings.length);
 }

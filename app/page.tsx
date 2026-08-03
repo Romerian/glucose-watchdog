@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { glucoseReadings, insulinDoses, type GlucoseReading } from "../lib/glucose-data";
 import {
@@ -9,10 +9,14 @@ import {
   classifyGlucose,
   formatLongDate,
   formatGlucoseTime,
+  getGlucoseWarning,
   getTrend,
+  WARNING_REMINDER_MS,
+  type GlucoseWarning,
 } from "../lib/glucose-business";
 
 type HoveredPoint = { kind: "glucose"; x: number; y: number; reading: GlucoseReading } | { kind: "insulin"; x: number; y: number; timestamp: string; units: number };
+type WarningRecord = GlucoseWarning & { id: string; timestamp: string; value: number; acknowledgedAt?: string };
 
 const chartX = (index: number) => 32 + (index / 23) * 656;
 const chartY = (value: number) => 222 - ((Math.min(220, Math.max(40, value)) - 40) / 180) * 194;
@@ -32,16 +36,36 @@ export default function Home() {
   const [noteOpen, setNoteOpen] = useState(false);
   const [note, setNote] = useState("");
   const [savedNotes, setSavedNotes] = useState<string[]>([]);
+  const [userReadings, setUserReadings] = useState<GlucoseReading[]>([]);
+  const [readingOpen, setReadingOpen] = useState(false);
+  const [readingInput, setReadingInput] = useState("");
+  const [activeWarning, setActiveWarning] = useState<WarningRecord | null>(null);
+  const [warningHistory, setWarningHistory] = useState<WarningRecord[]>([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => glucoseReadings.slice(index * 24, index * 24 + 24)), []);
   const visibleReadings = days[selectedDay];
   const visibleDoses = insulinDoses.slice(selectedDay * 3, selectedDay * 3 + 3);
-  const latest = glucoseReadings.at(-1) as GlucoseReading;
-  const previous = glucoseReadings.at(-2) as GlucoseReading;
+  const allReadings = [...glucoseReadings, ...userReadings];
+  const latest = allReadings.at(-1) as GlucoseReading;
+  const previous = (allReadings.at(-2) ?? latest) as GlucoseReading;
   const status = classifyGlucose(latest.value);
   const trend = getTrend(latest.value, previous.value);
   const average = calculateAverage(visibleReadings);
   const inRange = calculateTimeInRange(visibleReadings);
+
+  useEffect(() => {
+    const lastWarning = warningHistory[0];
+    if (!lastWarning?.acknowledgedAt || getGlucoseWarning(latest.value) === null) return;
+    const timeout = window.setTimeout(() => {
+      const warning = getGlucoseWarning(latest.value);
+      if (!warning) return;
+      const reminder = { ...warning, id: crypto.randomUUID(), timestamp: new Date().toISOString(), value: latest.value };
+      setWarningHistory((items) => [reminder, ...items]);
+      setActiveWarning(reminder);
+    }, WARNING_REMINDER_MS);
+    return () => window.clearTimeout(timeout);
+  }, [latest.value, warningHistory]);
 
   function saveNote() {
     const clean = note.trim();
@@ -49,6 +73,28 @@ export default function Home() {
     setSavedNotes((items) => [clean, ...items]);
     setNote("");
     setNoteOpen(false);
+  }
+
+  function saveReading() {
+    const value = Number(readingInput);
+    if (!Number.isFinite(value) || value < 20 || value > 500) return;
+    const reading = { value, timestamp: new Date().toISOString() };
+    setUserReadings((items) => [...items, reading]);
+    setReadingInput("");
+    setReadingOpen(false);
+    const warning = getGlucoseWarning(value);
+    if (warning) {
+      const record = { ...warning, id: crypto.randomUUID(), timestamp: reading.timestamp, value };
+      setWarningHistory((items) => [record, ...items]);
+      setActiveWarning(record);
+    }
+  }
+
+  function acknowledgeWarning() {
+    if (!activeWarning) return;
+    const acknowledgedAt = new Date().toISOString();
+    setWarningHistory((items) => items.map((item) => item.id === activeWarning.id ? { ...item, acknowledgedAt } : item));
+    setActiveWarning(null);
   }
 
   return (
@@ -66,9 +112,10 @@ export default function Home() {
           ))}
         </nav>
         <div className="header-actions">
-          <button className="icon-button" aria-label="Notifications"><span className="bell" aria-hidden="true" /></button>
+          <button className="icon-button notification-button" aria-label="Warning history" onClick={() => setNotificationsOpen((open) => !open)}><span className="bell" aria-hidden="true" />{warningHistory.length > 0 && <i>{warningHistory.length}</i>}</button>
           <button className="profile-button" aria-label="Open profile">RD</button>
         </div>
+        {notificationsOpen && <aside className="notification-panel" aria-label="Warning history"><div><b>Warning history</b><button onClick={() => setNotificationsOpen(false)} aria-label="Close warning history">×</button></div>{warningHistory.length === 0 ? <p>No warnings recorded.</p> : warningHistory.map((warning) => <article key={warning.id} className={warning.severity}><b>{warning.title}</b><span>{warning.value} mg/dL · {formatLongDate(warning.timestamp)} · {formatGlucoseTime(warning.timestamp)}</span><p>{warning.acknowledgedAt ? `Acknowledged ${formatGlucoseTime(warning.acknowledgedAt)}` : "Acknowledgement required"}</p></article>)}</aside>}
       </header>
 
       <main>
@@ -78,7 +125,7 @@ export default function Home() {
             <h1>{activeNav === "Overview" ? "Good afternoon, Romer." : activeNav}</h1>
             <p className="lede">Your glucose has stayed steady. Here’s the signal behind the number.</p>
           </div>
-          <button className="add-button" onClick={() => setNoteOpen(true)}><span>＋</span> Add note</button>
+          <div className="intro-actions"><button className="secondary-button" onClick={() => setNoteOpen(true)}>Add note</button><button className="add-button" onClick={() => setReadingOpen(true)}><span>＋</span> Add reading</button></div>
         </section>
 
         <section className="dashboard-grid" aria-label="Glucose overview">
@@ -160,7 +207,7 @@ export default function Home() {
         <section className="recent-card">
           <div className="section-heading"><div><p className="label">Data layer</p><h2>Recent readings</h2></div><button onClick={() => setActiveNav("Readings")}>View all →</button></div>
           <div className="reading-list">
-            {glucoseReadings.slice(-4).reverse().map((reading, index) => {
+            {allReadings.slice(-4).reverse().map((reading, index) => {
               const itemStatus = classifyGlucose(reading.value);
               return <div className="reading-row" key={reading.timestamp}><div><span className={`reading-dot ${itemStatus.tone}`} /> <b>{formatGlucoseTime(reading.timestamp)}</b></div><span>{index === 0 ? "Latest sensor reading" : "Continuous monitor"}</span><strong>{reading.value} <small>mg/dL</small></strong></div>;
             })}
@@ -170,6 +217,8 @@ export default function Home() {
       </main>
 
       {noteOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setNoteOpen(false)}><section className="note-modal" role="dialog" aria-modal="true" aria-labelledby="note-title" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setNoteOpen(false)} aria-label="Close">×</button><p className="eyebrow"><span /> Journal entry</p><h2 id="note-title">Add a glucose note</h2><p>Capture a meal, medication, exercise, or how you feel.</p><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="What happened?" autoFocus /><div className="modal-actions"><button onClick={() => setNoteOpen(false)}>Cancel</button><button className="save-button" onClick={saveNote}>Save note</button></div></section></div>}
+      {readingOpen && <div className="modal-backdrop" role="presentation"><section className="note-modal reading-modal" role="dialog" aria-modal="true" aria-labelledby="reading-title"><button className="modal-close" onClick={() => setReadingOpen(false)} aria-label="Close">×</button><p className="eyebrow"><span /> Glucose reading</p><h2 id="reading-title">Record a reading</h2><p>The date and time will be recorded automatically.</p><label htmlFor="glucose-value">Glucose level</label><div className="reading-input"><input id="glucose-value" inputMode="decimal" type="number" min="20" max="500" value={readingInput} onChange={(event) => setReadingInput(event.target.value)} autoFocus /><span>mg/dL</span></div><small>Warnings appear below 70 or above 180 mg/dL.</small><div className="modal-actions"><button onClick={() => setReadingOpen(false)}>Cancel</button><button className="save-button" onClick={saveReading} disabled={!readingInput}>Record reading</button></div></section></div>}
+      {activeWarning && <div className={`warning-backdrop ${activeWarning.severity}`} role="presentation"><section className="warning-dialog" role="alertdialog" aria-modal="true" aria-labelledby="warning-title" aria-describedby="warning-message"><span className="warning-symbol" aria-hidden="true">!</span><p className="warning-kicker">Glucose warning · {formatLongDate(activeWarning.timestamp)} · {formatGlucoseTime(activeWarning.timestamp)}</p><h2 id="warning-title">{activeWarning.title}</h2><strong>{activeWarning.value} <small>mg/dL</small></strong><p id="warning-message">{activeWarning.message}</p><div className="warning-rule"><b>Acknowledgement required</b><span>If your glucose remains outside the acceptable range, this warning will return in five minutes.</span></div><button onClick={acknowledgeWarning}>I understand — acknowledge warning</button></section></div>}
     </div>
   );
 }

@@ -9,6 +9,7 @@ A responsive glucose-monitoring dashboard constructed from the requirements conn
 - `MDSW-SOFTW-10` — Keep the application title in the upper-left corner
 - `MDSW-SR-15` — Use the title “Glucose Watchdog” with an English bulldog icon
 - `MDSW-EpicSU-2` — Refine the glucose graph with threshold colors, 24-hour pages, seven-day navigation, connected readings, and hover details
+- `MDSW-EpicSU-3` — Record glucose entries and show blocking low/high warnings with acknowledgement, five-minute reminders, and warning history
 
 ## Architecture
 
