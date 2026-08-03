@@ -2,18 +2,20 @@
 
 import { useMemo, useState } from "react";
 import Image from "next/image";
-import { glucoseReadings, type GlucoseReading } from "../lib/glucose-data";
+import { glucoseReadings, insulinDoses, type GlucoseReading } from "../lib/glucose-data";
 import {
   calculateAverage,
   calculateTimeInRange,
   classifyGlucose,
+  formatLongDate,
   formatGlucoseTime,
   getTrend,
 } from "../lib/glucose-business";
 
-type RangeKey = "3H" | "6H" | "12H" | "24H";
+type HoveredPoint = { kind: "glucose"; x: number; y: number; reading: GlucoseReading } | { kind: "insulin"; x: number; y: number; timestamp: string; units: number };
 
-const ranges: Record<RangeKey, number> = { "3H": 12, "6H": 18, "12H": 24, "24H": 30 };
+const chartX = (index: number) => 32 + (index / 23) * 656;
+const chartY = (value: number) => 222 - ((Math.min(220, Math.max(40, value)) - 40) / 180) * 194;
 
 function PawMark() {
   return (
@@ -24,13 +26,16 @@ function PawMark() {
 }
 
 export default function Home() {
-  const [range, setRange] = useState<RangeKey>("12H");
+  const [selectedDay, setSelectedDay] = useState(6);
+  const [hoveredPoint, setHoveredPoint] = useState<HoveredPoint | null>(null);
   const [activeNav, setActiveNav] = useState("Overview");
   const [noteOpen, setNoteOpen] = useState(false);
   const [note, setNote] = useState("");
   const [savedNotes, setSavedNotes] = useState<string[]>([]);
 
-  const visibleReadings = useMemo(() => glucoseReadings.slice(-ranges[range]), [range]);
+  const days = useMemo(() => Array.from({ length: 7 }, (_, index) => glucoseReadings.slice(index * 24, index * 24 + 24)), []);
+  const visibleReadings = days[selectedDay];
+  const visibleDoses = insulinDoses.slice(selectedDay * 3, selectedDay * 3 + 3);
   const latest = glucoseReadings.at(-1) as GlucoseReading;
   const previous = glucoseReadings.at(-2) as GlucoseReading;
   const status = classifyGlucose(latest.value);
@@ -89,18 +94,18 @@ export default function Home() {
               <strong>{latest.value}</strong><span>mg/dL</span>
               <div className="trend"><b>{trend.symbol}</b>{trend.label}</div>
             </div>
-            <div className="range-track" aria-label="Target range 70 to 180 milligrams per deciliter">
-              <span className="range-low">70</span><span className="range-high">180</span>
+            <div className="range-track" aria-label="Normal range 80 to 115 milligrams per deciliter">
+              <span className="range-low">80</span><span className="range-high">115</span>
               <i style={{ left: `${Math.min(94, Math.max(6, ((latest.value - 40) / 180) * 100))}%` }} />
             </div>
-            <p className="range-caption">Target range <b>70–180 mg/dL</b></p>
+            <p className="range-caption">Normal range <b>80–115 mg/dL</b></p>
           </article>
 
           <article className="metric-card teal-card">
             <div className="metric-icon"><PawMark /></div>
             <p className="label">Time in range</p>
             <strong>{inRange}%</strong>
-            <p>Last {range.toLowerCase()}</p>
+            <p>{formatLongDate(visibleReadings[0].timestamp)}</p>
             <div className="progress"><i style={{ width: `${inRange}%` }} /></div>
           </article>
 
@@ -115,20 +120,32 @@ export default function Home() {
         <section className="content-grid">
           <article className="chart-card">
             <div className="section-heading">
-              <div><p className="label">Glucose pattern</p><h2>Today’s curve</h2></div>
-              <div className="range-buttons" aria-label="Chart range">
-                {(Object.keys(ranges) as RangeKey[]).map((item) => <button key={item} className={range === item ? "selected" : ""} onClick={() => setRange(item)}>{item}</button>)}
+              <div><p className="label">24-hour glucose trend</p><h2>{formatLongDate(visibleReadings[0].timestamp)}</h2></div>
+              <div className="chart-nav" aria-label="Select chart day">
+                <button onClick={() => setSelectedDay((day) => Math.max(0, day - 1))} disabled={selectedDay === 0} aria-label="Previous day">←</button>
+                <span>Day {selectedDay + 1} of 7</span>
+                <button onClick={() => setSelectedDay((day) => Math.min(6, day + 1))} disabled={selectedDay === 6} aria-label="Next day">→</button>
               </div>
             </div>
-            <div className="chart" role="img" aria-label={`Glucose chart for the last ${range.toLowerCase()}`}>
-              <div className="target-band"><span>Target range</span></div>
-              <div className="chart-bars">
-                {visibleReadings.map((reading, index) => {
-                  const height = Math.max(14, Math.min(94, ((reading.value - 55) / 110) * 100));
-                  return <i key={reading.timestamp} className={index === visibleReadings.length - 1 ? "latest-bar" : ""} style={{ height: `${height}%` }} title={`${formatGlucoseTime(reading.timestamp)} · ${reading.value} mg/dL`} />;
-                })}
-              </div>
-              <div className="chart-axis"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>Now</span></div>
+            <div className="day-strip" aria-label="Seven days of glucose data">
+              {days.map((day, index) => <button key={day[0].timestamp} className={selectedDay === index ? "selected" : ""} onClick={() => setSelectedDay(index)}><span>{new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(new Date(day[0].timestamp))}</span>{new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(day[0].timestamp))}</button>)}
+            </div>
+            <div className="chart" onMouseLeave={() => setHoveredPoint(null)}>
+              <svg viewBox="0 0 720 250" role="img" aria-label={`Glucose readings for ${formatLongDate(visibleReadings[0].timestamp)} from 00:00 through 23:00`}>
+                <rect className="zone zone-high" x="32" y={chartY(220)} width="656" height={chartY(180) - chartY(220)} />
+                <rect className="zone zone-normal" x="32" y={chartY(115)} width="656" height={chartY(80) - chartY(115)} />
+                <rect className="zone zone-low" x="32" y={chartY(70)} width="656" height={chartY(40) - chartY(70)} />
+                {[40, 70, 80, 115, 180].map((value) => <g key={value}><line className="grid-line" x1="32" x2="688" y1={chartY(value)} y2={chartY(value)} /><text className="axis-label" x="27" y={chartY(value) + 3} textAnchor="end">{value}</text></g>)}
+                <text className="zone-label" x="680" y={chartY(196)}>HIGH 180–400</text>
+                <text className="zone-label" x="680" y={chartY(93)}>NORMAL 80–115</text>
+                <text className="zone-label" x="680" y={chartY(55)}>LOW 40–70</text>
+                <polyline className="glucose-line" points={visibleReadings.map((reading, index) => `${chartX(index)},${chartY(reading.value)}`).join(" ")} />
+                {visibleReadings.map((reading, index) => <circle key={reading.timestamp} className="glucose-point" cx={chartX(index)} cy={chartY(reading.value)} r="4.5" tabIndex={0} aria-label={`${reading.value} milligrams per deciliter on ${formatLongDate(reading.timestamp)} at ${formatGlucoseTime(reading.timestamp)}`} onMouseEnter={() => setHoveredPoint({ kind: "glucose", x: chartX(index), y: chartY(reading.value), reading })} onFocus={() => setHoveredPoint({ kind: "glucose", x: chartX(index), y: chartY(reading.value), reading })} />)}
+                {visibleDoses.map((dose) => { const hour = new Date(dose.timestamp).getHours() + new Date(dose.timestamp).getMinutes() / 60; const x = 32 + (hour / 23) * 656; return <rect key={dose.timestamp} className="insulin-point" x={x - 5} y="228" width="10" height="10" transform={`rotate(45 ${x} 233)`} tabIndex={0} aria-label={`${dose.units} units of insulin on ${formatLongDate(dose.timestamp)} at ${formatGlucoseTime(dose.timestamp)}`} onMouseEnter={() => setHoveredPoint({ kind: "insulin", x, y: 228, timestamp: dose.timestamp, units: dose.units })} onFocus={() => setHoveredPoint({ kind: "insulin", x, y: 228, timestamp: dose.timestamp, units: dose.units })} />; })}
+              </svg>
+              {hoveredPoint && <div className="chart-tooltip" style={{ left: `${Math.min(78, Math.max(8, (hoveredPoint.x / 720) * 100))}%`, top: `${Math.max(5, (hoveredPoint.y / 250) * 100 - 24)}%` }}><b>{hoveredPoint.kind === "glucose" ? `${hoveredPoint.reading.value} mg/dL` : `${hoveredPoint.units} units insulin`}</b><span>{formatLongDate(hoveredPoint.kind === "glucose" ? hoveredPoint.reading.timestamp : hoveredPoint.timestamp)}</span><span>{formatGlucoseTime(hoveredPoint.kind === "glucose" ? hoveredPoint.reading.timestamp : hoveredPoint.timestamp)}</span></div>}
+              <div className="chart-legend"><span><i className="legend-dot" /> Glucose reading</span><span><i className="legend-insulin" /> Insulin dose</span><span>Times shown in HH:mm</span></div>
+              <div className="chart-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div>
             </div>
           </article>
 

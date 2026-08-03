@@ -1,11 +1,28 @@
 export type GlucoseReading = { timestamp: string; value: number };
+export type InsulinDose = { timestamp: string; units: number };
 
-// Data layer: this module is the single source of glucose readings for the base app.
-export const glucoseReadings: GlucoseReading[] = [
-  104, 99, 96, 93, 89, 86, 84, 82, 85, 90,
-  96, 105, 116, 128, 141, 149, 143, 136, 130, 125,
-  120, 116, 113, 110, 108, 106, 104, 103, 102, 104,
-].map((value, index) => ({
-  value,
-  timestamp: new Date(2026, 7, 3, 0, index * 30).toISOString(),
-}));
+const dayNumbers = [28, 29, 30, 31, 1, 2, 3];
+
+// Data layer: seven complete 24-hour pages of deterministic sample readings.
+export const glucoseReadings: GlucoseReading[] = dayNumbers.flatMap((day, dayIndex) =>
+  Array.from({ length: 24 }, (_, hour) => {
+    const month = day >= 28 ? 6 : 7;
+    const circadian = Math.round(15 * Math.sin(((hour - 5) / 24) * Math.PI * 2));
+    const mealRise = [8, 9, 13, 14, 19, 20].includes(hour) ? 44 : 0;
+    const dayShift = [2, -4, 5, 0, -2, 4, 1][dayIndex];
+    let value = 93 + circadian + mealRise + dayShift;
+    if (dayIndex === 1 && hour === 4) value = 64;
+    if (dayIndex === 4 && hour === 14) value = 194;
+    if (dayIndex === 6 && hour === 23) value = 104;
+    return { value, timestamp: new Date(2026, month, day, hour, 0).toISOString() };
+  }),
+);
+
+export const insulinDoses: InsulinDose[] = dayNumbers.flatMap((day, dayIndex) => {
+  const month = day >= 28 ? 6 : 7;
+  return [
+    { timestamp: new Date(2026, month, day, 8, 15).toISOString(), units: 4 + (dayIndex % 2) },
+    { timestamp: new Date(2026, month, day, 13, 10).toISOString(), units: 5 },
+    { timestamp: new Date(2026, month, day, 19, 20).toISOString(), units: 6 },
+  ];
+});
