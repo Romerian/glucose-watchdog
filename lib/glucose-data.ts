@@ -1,5 +1,6 @@
 export type GlucoseReading = { timestamp: string; value: number };
-export type InsulinDose = { timestamp: string; units: number };
+export type InsulinType = "Basal" | "Bolus";
+export type InsulinDose = { timestamp: string; units: number; type: InsulinType; durationMinutes?: number };
 
 const dayNumbers = [28, 29, 30, 31, 1, 2, 3];
 
@@ -21,8 +22,8 @@ export const glucoseReadings: GlucoseReading[] = dayNumbers.flatMap((day, dayInd
 export const insulinDoses: InsulinDose[] = dayNumbers.flatMap((day, dayIndex) => {
   const month = day >= 28 ? 6 : 7;
   return [
-    { timestamp: new Date(2026, month, day, 8, 15).toISOString(), units: 4 + (dayIndex % 2) },
-    { timestamp: new Date(2026, month, day, 13, 10).toISOString(), units: 5 },
-    { timestamp: new Date(2026, month, day, 19, 20).toISOString(), units: 6 },
+    { timestamp: new Date(2026, month, day, 8, 15).toISOString(), units: 4 + (dayIndex % 2), type: "Basal" as const, durationMinutes: 8 * 60 },
+    { timestamp: new Date(2026, month, day, 13, 10).toISOString(), units: 5, type: "Bolus" as const },
+    { timestamp: new Date(2026, month, day, 19, 20).toISOString(), units: 6, type: "Bolus" as const },
   ];
 });
